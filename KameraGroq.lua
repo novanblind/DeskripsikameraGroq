@@ -47,14 +47,16 @@ local vibrator = service.getSystemService(Context.VIBRATOR_SERVICE)
 -- KONFIGURASI VERSI & GITHUB SILENT AUTO-UPDATE
 -- ====================================================================
 local APP_TITLE = "Deskripsi kamera Groq by Novan"
-local CURRENT_VERSION = "1.0.0"
+local CURRENT_VERSION = "1.0.2"
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/novanblind/DeskripsikameraGroq/main/KameraGroq.lua"
 
 local MODEL_NAME = "qwen/qwen3.8-27b"
 
 local DEFAULT_TEXT_INSTRUCTION = "Salin dan tulis ulang seluruh teks yang terbaca pada gambar ini secara presisi dari atas ke bawah sesuai urutan aslinya. Jangan tambahkan deskripsi visual, jangan berikan kesimpulan, dan jangan gunakan kata pengantar. Tampilkan HANYA teks mentah yang terlihat di layar."
 local DEFAULT_MONEY_INSTRUCTION = "Identifikasi nominal uang tunai kertas atau koin rupiah pada gambar ini. Berikan HANYA nominal uangnya saja dalam bahasa Indonesia secara singkat dan jelas, contoh: Seratus ribu rupiah, Lima puluh ribu rupiah, Dua puluh ribu rupiah, Sepuluh ribu rupiah, Lima ribu rupiah, Dua ribu rupiah, Seribu rupiah, atau Uang tidak terdeteksi. DILARANG memberikan pengantar, akhiran, ataupun penjelasan visual tambahan."
-local DEFAULT_PHOTO_DESC_INSTRUCTION = [[Deskripsikan gambar secara jelas, natural, dan profesional dalam bahasa Indonesia. Susun narasi visual yang mengalir dari elemen paling dominan ke objek, karakter, lingkungan, dan detail sekitarnya. Jelaskan warna, bentuk, ukuran, tekstur, posisi, pencahayaan, suasana, komposisi, serta hubungan antarelemen tanpa berlebihan.
+local DEFAULT_PHOTO_DESC_INSTRUCTION = [[DILARANG KERAS menggunakan kalimat pengantar, pembuka, atau basa-basi apa pun seperti 'Berdasarkan gambar...', 'Berikut adalah...', 'Gambar ini memperlihatkan...', atau sejenisnya. 
+
+LANGSUNG mulai kata pertama dengan menyebutkan objek utama yang terlihat. Deskripsikan gambar secara jelas, natural, dan profesional dalam bahasa Indonesia. Susun narasi visual yang mengalir dari elemen paling dominan ke objek, karakter, lingkungan, dan detail sekitarnya. Jelaskan warna, bentuk, ukuran, tekstur, posisi, pencahayaan, suasana, komposisi, serta hubungan antarelemen tanpa berlebihan.
 Jika terdapat manusia atau karakter, gambarkan penampilan, pakaian, ekspresi, arah pandangan, gestur, dan kesan emosional yang tampak. Jelaskan pula kedalaman ruang, objek di depan, tengah, dan belakang, serta cara komposisi mengarahkan perhatian.
 
 Jika gambar berisi surat, dokumen, formulir, poster, papan, atau teks lainnya, bacakan dan transkripsikan seluruh teks yang terlihat secara akurat. Pertahankan urutan pembacaan sesuai tata letak gambar.
@@ -211,7 +213,6 @@ local function readLocalApiKeyFile()
   return ""
 end
 
--- Mengambil Kunci API aktif (Prioritas: Kunci Kustom -> Berkas api_key.txt)
 local function getActiveApiKey()
   local customKey = sp.getString("custom_api_key", "")
   if customKey ~= "" then return customKey end
@@ -219,7 +220,6 @@ local function getActiveApiKey()
   return readLocalApiKeyFile()
 end
 
--- Pengaturan tersimpan
 local currentMode = sp.getString("app_mode", "desc")
 local cameraFacing = sp.getString("camera_facing", "environment")
 local selectedResolution = sp.getString("resolution", "720p")
@@ -401,7 +401,7 @@ local function sendToGroq(base64Image)
   end
 
   local activeInstruction = photoDescInstruction
-  local userPrompt = "Deskripsikan isi gambar ini secara naratif dan detail sesuai instruksi."
+  local userPrompt = "Langsung sebutkan objek utama dan rincian visual gambar ini tanpa kata pengantar atau pembuka apa pun."
 
   if currentMode == "text" then
     activeInstruction = textInstruction
@@ -694,8 +694,6 @@ local function showApiKeyDialog()
   local input = EditText(service)
   input.setSingleLine(true)
 
-  -- HANYA tampilkan teks kunci jika pengguna/orang lain telah memasukkan kunci kustom.
-  -- Jika memakai kunci file bawaan, kosongkan input dan tampilkan petunjuk (hint).
   if currentCustomKey ~= "" then
     input.setText(currentCustomKey)
     input.setHint("Kunci kustom aktif tersimpan")
@@ -776,7 +774,7 @@ showSettingsMenu = function()
   }
 
   local b = AlertDialog.Builder(service)
-    .setTitle("Pengaturan - " .. APP_TITLE)
+    .setTitle("Pengaturan - " .. APP_TITLE .. " v" .. CURRENT_VERSION)
     .setItems(items, function(dlg, which)
       dlg.dismiss()
       if which == 0 then
