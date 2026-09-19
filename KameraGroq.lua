@@ -84,7 +84,7 @@ local function getScriptFilePath()
 end
 
 -- ====================================================================
--- MEKANISME SILENT AUTO-UPDATE (TANPA NOTIFIKASI / TANPA SUARA)
+-- MEKANISME SILENT AUTO-UPDATE (TANPA NOTIFIKASI)
 -- ====================================================================
 local function parseVersion(verStr)
   local parts = {}
@@ -211,7 +211,7 @@ local function readLocalApiKeyFile()
   return ""
 end
 
--- Mengambil Kunci API aktif (Prioritas: Kustom UI -> File api_key.txt)
+-- Mengambil Kunci API aktif (Prioritas: Kunci Kustom -> Berkas api_key.txt)
 local function getActiveApiKey()
   local customKey = sp.getString("custom_api_key", "")
   if customKey ~= "" then return customKey end
@@ -691,41 +691,42 @@ end
 
 local function showApiKeyDialog()
   local currentCustomKey = sp.getString("custom_api_key", "")
-  local fileKey = readLocalApiKeyFile()
+  local input = EditText(service)
+  input.setSingleLine(true)
 
-  local statusHint = "Tempel Kunci Groq (gsk_...) di sini..."
+  -- HANYA tampilkan teks kunci jika pengguna/orang lain telah memasukkan kunci kustom.
+  -- Jika memakai kunci file bawaan, kosongkan input dan tampilkan petunjuk (hint).
   if currentCustomKey ~= "" then
-    statusHint = "Kunci kustom aktif tersimpan"
-  elseif fileKey ~= "" then
-    statusHint = "Kunci aktif dari berkas api_key.txt"
+    input.setText(currentCustomKey)
+    input.setHint("Kunci kustom aktif tersimpan")
+  else
+    input.setText("")
+    input.setHint("Kunci bawaan aktif. Tempel kunci kustom di sini...")
   end
 
-  local input = EditText(service)
-  input.setText(currentCustomKey)
-  input.setHint(statusHint)
-
   local b = AlertDialog.Builder(service)
-    .setTitle("Kunci API Groq")
+    .setTitle("Pengaturan Kunci API")
     .setView(input)
     .setPositiveButton("Simpan", function()
       local key = tostring(input.getText()):gsub("^%s*(.-)%s*$", "%1")
       if key ~= "" then
         sp.edit().putString("custom_api_key", key).apply()
-        service.speak("Kunci API kustom disimpan.")
+        service.speak("Kunci API kustom berhasil disimpan.")
       else
         sp.edit().remove("custom_api_key").apply()
-        service.speak("Kunci kustom dihapus. Menggunakan kunci dari file api_key.txt.")
+        service.speak("Kunci kustom dihapus, kembali ke kunci bawaan.")
       end
     end)
-    .setNeutralButton("Reset ke File", function()
+    .setNeutralButton("Reset Kunci API", function()
       sp.edit().remove("custom_api_key").apply()
       if readLocalApiKeyFile() ~= "" then
-        service.speak("Kunci dikembalikan ke setelan file api_key.txt.")
+        service.speak("Kunci API berhasil di-reset ke berkas bawaan.")
       else
-        service.speak("Kunci kustom dihapus. Silakan pastikan file api_key.txt terisi.")
+        service.speak("Kunci API di-reset. Silakan pastikan file api_key.txt terisi.")
       end
     end)
     .setNegativeButton("Batal", nil)
+
   displayOverlayDialog(b)
 end
 
@@ -762,17 +763,10 @@ showSettingsMenu = function()
   local vibText = vibrationEnabled and "Aktif" or "Mati"
   local torchText = torchEnabled and "Aktif" or "Mati"
 
-  local keySource = "Belum Ada Kunci"
-  if sp.getString("custom_api_key", "") ~= "" then
-    keySource = "Kustom Manual"
-  elseif readLocalApiKeyFile() ~= "" then
-    keySource = "File api_key.txt"
-  end
-
   local items = {
     "1. Kamera yang Digunakan (" .. camText .. ")",
     "2. Resolusi Gambar (" .. selectedResolution .. ")",
-    "3. Kunci API Groq (Sumber: " .. keySource .. ")",
+    "3. Pengaturan Kunci API",
     "4. Lampu Flash Kamera (" .. torchText .. ")",
     "5. Getaran Saat Memotret (" .. vibText .. ")",
     "6. Edit Instruksi Mode Teks",
@@ -1037,7 +1031,6 @@ end
 -- ====================================================================
 launchCameraView()
 
--- Jalankan pengecekan pembaruan senyap di latar belakang
 mainHandler.postDelayed(Runnable{
   run = function()
     checkSilentUpdate()
