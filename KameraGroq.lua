@@ -26,6 +26,11 @@ import "android.os.Vibrator"
 import "android.util.Base64"
 import "java.io.ByteArrayOutputStream"
 import "java.io.File"
+import "java.io.FileOutputStream"
+import "java.net.URL"
+import "java.net.HttpURLConnection"
+import "java.io.BufferedReader"
+import "java.io.InputStreamReader"
 import "java.lang.System"
 import "java.lang.String"
 import "java.lang.Runnable"
@@ -39,9 +44,12 @@ local mainHandler = Handler(Looper.getMainLooper())
 local vibrator = service.getSystemService(Context.VIBRATOR_SERVICE)
 
 -- ====================================================================
--- JUDUL SCRIPT & KONFIGURASI BAWAAN
+-- KONFIGURASI VERSI & GITHUB SILENT AUTO-UPDATE
 -- ====================================================================
 local APP_TITLE = "Deskripsi kamera Groq by Novan"
+local CURRENT_VERSION = "1.0.0"
+local GITHUB_RAW_URL = "https://raw.githubusercontent.com/novanblind/DeskripsikameraGroq/main/KameraGroq.lua"
+
 local SECRET_DEFAULT_KEY = "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"
 local MODEL_NAME = "qwen/qwen3.8-27b"
 
@@ -55,6 +63,118 @@ Jika gambar berisi surat, dokumen, formulir, poster, papan, atau teks lainnya, b
 Jangan gunakan pembuka umum seperti 'Gambar ini menunjukkan...', penomoran, bullet point, subjudul, atau kategori. Dasarkan setiap pernyataan pada hal yang benar-benar terlihat; nyatakan ketidakpastian jika diperlukan. Pastikan isi surat atau dokumen disampaikan secara lengkap sebelum memberikan deskripsi visual dan kesan suasana keseluruhan.]]
 
 local sp = service.getSharedPreferences("novan_groq_camera_desc_config", Context.MODE_PRIVATE)
+
+-- ====================================================================
+-- DETEKSI JALUR BERKAS SCRIPT LOKAL
+-- ====================================================================
+local function getScriptFilePath()
+  local src = debug.getinfo(1, "S").source
+  if src and src:sub(1, 1) == "@" then
+    return src:sub(2)
+  end
+  local fallbackPaths = {
+    "/storage/emulated/0/解说/Plugin/Deskripsi kamera Groq by Novan/main.lua",
+    "/sdcard/解说/Plugin/Deskripsi kamera Groq by Novan/main.lua",
+    "/storage/emulated/0/jieshuo/plugin/Deskripsi kamera Groq by Novan/main.lua",
+    "/sdcard/jieshuo/plugin/Deskripsi kamera Groq by Novan/main.lua"
+  }
+  for _, path in ipairs(fallbackPaths) do
+    if File(path).exists() then return path end
+  end
+  return fallbackPaths[1]
+end
+
+-- ====================================================================
+-- MEKANISME SILENT AUTO-UPDATE (LATAR BELAKANG TANPA PEMBERITAHUAN)
+-- ====================================================================
+local function parseVersion(verStr)
+  local parts = {}
+  for num in string.gmatch(verStr or "", "(%d+)") do
+    table.insert(parts, tonumber(num))
+  end
+  return parts
+end
+
+local function isNewerVersion(remoteVer, localVer)
+  local r = parseVersion(remoteVer)
+  local l = parseVersion(localVer)
+  local maxLen = math.max(#r, #l)
+  for i = 1, maxLen do
+    local rNum = r[i] or 0
+    local lNum = l[i] or 0
+    if rNum > lNum then return true end
+    if rNum < lNum then return false end
+  end
+  return false
+end
+
+local function saveNewScript(newCode, targetPath)
+  local success = false
+  pcall(function()
+    local f = File(targetPath)
+    if not f.getParentFile().exists() then
+      f.getParentFile().mkdirs()
+    end
+    local fos = FileOutputStream(f)
+    fos.write(String(newCode).getBytes("UTF-8"))
+    fos.flush()
+    fos.close()
+    success = true
+  end)
+  return success
+end
+
+local function checkSilentUpdate()
+  local fetchUrl = GITHUB_RAW_URL .. "?t=" .. tostring(os.time())
+
+  local function processUpdateContent(content)
+    if not content or #content < 200 then return end
+    local remoteVersion = content:match('local%s+CURRENT_VERSION%s*=%s*["\']([^"\']+)["\']')
+    if remoteVersion and isNewerVersion(remoteVersion, CURRENT_VERSION) then
+      local localPath = getScriptFilePath()
+      if localPath then
+        saveNewScript(content, localPath)
+      end
+    end
+  end
+
+  local httpEngine = http or Http
+  if httpEngine and httpEngine.get then
+    pcall(function()
+      httpEngine.get(fetchUrl, function(code, content)
+        if code == 200 then
+          processUpdateContent(content)
+        end
+      end)
+    end)
+  else
+    Thread(Runnable{
+      run = function()
+        pcall(function()
+          local url = URL(fetchUrl)
+          local conn = url.openConnection()
+          conn.setRequestMethod("GET")
+          conn.setConnectTimeout(8000)
+          conn.setReadTimeout(10000)
+          conn.setInstanceFollowRedirects(true)
+
+          if conn.getResponseCode() == 200 then
+            local reader = BufferedReader(InputStreamReader(conn.getInputStream(), "UTF-8"))
+            local lines = {}
+            local line = reader.readLine()
+            while line ~= nil do
+              table.insert(lines, line)
+              line = reader.readLine()
+            end
+            reader.close()
+            processUpdateContent(table.concat(lines, "\n"))
+          end
+          conn.disconnect()
+        end)
+      end
+    }).start()
+  end
+end
 
 -- ====================================================================
 -- SISTEM PEMBACAAN FILE API KEY DARI STORAGE
@@ -92,7 +212,6 @@ local function readLocalApiKeyFile()
   return ""
 end
 
--- Ambil Kunci API aktif dengan prioritas: Kustom UI -> File txt -> Hardcoded
 local function getActiveApiKey()
   local customKey = sp.getString("custom_api_key", "")
   if customKey ~= "" then return customKey end
@@ -860,7 +979,6 @@ local function launchCameraView()
 
   dialog = builder.create()
 
-  -- Set type overlay SEBELUM show untuk mencegah BadTokenException
   local win = dialog.getWindow()
   if win then
     win.setType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
@@ -888,7 +1006,6 @@ local function launchCameraView()
 
   dialog.show()
 
-  -- Fokus otomatis ke tombol Ambil Foto agar navigasi suara langsung aktif
   mainHandler.postDelayed(Runnable{
     run = function()
       pcall(function()
@@ -903,5 +1020,16 @@ local function launchCameraView()
   }, 250)
 end
 
+-- ====================================================================
+-- EKSEKUSI UTAMA
+-- ====================================================================
 launchCameraView()
+
+-- Jalankan pengecekan pembaruan senyap di latar belakang
+mainHandler.postDelayed(Runnable{
+  run = function()
+    checkSilentUpdate()
+  end
+}, 1500)
+
 return true
