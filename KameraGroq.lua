@@ -50,7 +50,6 @@ local APP_TITLE = "Deskripsi kamera Groq by Novan"
 local CURRENT_VERSION = "1.0.0"
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/novanblind/DeskripsikameraGroq/main/KameraGroq.lua"
 
-local SECRET_DEFAULT_KEY = "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"
 local MODEL_NAME = "qwen/qwen3.8-27b"
 
 local DEFAULT_TEXT_INSTRUCTION = "Salin dan tulis ulang seluruh teks yang terbaca pada gambar ini secara presisi dari atas ke bawah sesuai urutan aslinya. Jangan tambahkan deskripsi visual, jangan berikan kesimpulan, dan jangan gunakan kata pengantar. Tampilkan HANYA teks mentah yang terlihat di layar."
@@ -85,7 +84,7 @@ local function getScriptFilePath()
 end
 
 -- ====================================================================
--- MEKANISME SILENT AUTO-UPDATE (LATAR BELAKANG TANPA PEMBERITAHUAN)
+-- MEKANISME SILENT AUTO-UPDATE (TANPA NOTIFIKASI / TANPA SUARA)
 -- ====================================================================
 local function parseVersion(verStr)
   local parts = {}
@@ -177,7 +176,7 @@ local function checkSilentUpdate()
 end
 
 -- ====================================================================
--- SISTEM PEMBACAAN FILE API KEY DARI STORAGE
+-- SISTEM PEMBACAAN FILE API KEY DARI PENYIMPANAN INTERNAL
 -- ====================================================================
 local function readLocalApiKeyFile()
   local candidatePaths = {
@@ -212,14 +211,12 @@ local function readLocalApiKeyFile()
   return ""
 end
 
+-- Mengambil Kunci API aktif (Prioritas: Kustom UI -> File api_key.txt)
 local function getActiveApiKey()
   local customKey = sp.getString("custom_api_key", "")
   if customKey ~= "" then return customKey end
 
-  local fileKey = readLocalApiKeyFile()
-  if fileKey ~= "" then return fileKey end
-
-  return SECRET_DEFAULT_KEY
+  return readLocalApiKeyFile()
 end
 
 -- Pengaturan tersimpan
@@ -397,6 +394,12 @@ end
 local function sendToGroq(base64Image)
   local activeKey = getActiveApiKey()
 
+  if activeKey == "" then
+    isCapturing = false
+    service.speak("Kunci API belum ditemukan. Pastikan berkas api_key.txt sudah terisi kunci Groq.")
+    return
+  end
+
   local activeInstruction = photoDescInstruction
   local userPrompt = "Deskripsikan isi gambar ini secara naratif dan detail sesuai instruksi."
 
@@ -559,8 +562,13 @@ end
 -- ====================================================================
 local function captureAndProcess()
   if isCapturing or not cam then return end
-  isCapturing = true
 
+  if getActiveApiKey() == "" then
+    service.speak("Kunci API belum ditemukan. Pastikan file api_key.txt sudah terisi.")
+    return
+  end
+
+  isCapturing = true
   triggerHaptic(80)
 
   local msg = "Mendeskripsikan foto..."
@@ -685,11 +693,11 @@ local function showApiKeyDialog()
   local currentCustomKey = sp.getString("custom_api_key", "")
   local fileKey = readLocalApiKeyFile()
 
-  local statusHint = "Kunci bawaan aktif"
+  local statusHint = "Tempel Kunci Groq (gsk_...) di sini..."
   if currentCustomKey ~= "" then
-    statusHint = "Kunci kustom aktif"
+    statusHint = "Kunci kustom aktif tersimpan"
   elseif fileKey ~= "" then
-    statusHint = "Kunci aktif dari file api_key.txt"
+    statusHint = "Kunci aktif dari berkas api_key.txt"
   end
 
   local input = EditText(service)
@@ -706,12 +714,16 @@ local function showApiKeyDialog()
         service.speak("Kunci API kustom disimpan.")
       else
         sp.edit().remove("custom_api_key").apply()
-        service.speak("Kunci kustom dihapus. Menggunakan kunci dari file atau bawaan.")
+        service.speak("Kunci kustom dihapus. Menggunakan kunci dari file api_key.txt.")
       end
     end)
-    .setNeutralButton("Reset Bawaan", function()
+    .setNeutralButton("Reset ke File", function()
       sp.edit().remove("custom_api_key").apply()
-      service.speak("Kunci dikembalikan ke setelan file / bawaan.")
+      if readLocalApiKeyFile() ~= "" then
+        service.speak("Kunci dikembalikan ke setelan file api_key.txt.")
+      else
+        service.speak("Kunci kustom dihapus. Silakan pastikan file api_key.txt terisi.")
+      end
     end)
     .setNegativeButton("Batal", nil)
   displayOverlayDialog(b)
@@ -750,7 +762,7 @@ showSettingsMenu = function()
   local vibText = vibrationEnabled and "Aktif" or "Mati"
   local torchText = torchEnabled and "Aktif" or "Mati"
 
-  local keySource = "Bawaan"
+  local keySource = "Belum Ada Kunci"
   if sp.getString("custom_api_key", "") ~= "" then
     keySource = "Kustom Manual"
   elseif readLocalApiKeyFile() ~= "" then
