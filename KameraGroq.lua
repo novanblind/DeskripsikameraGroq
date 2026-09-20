@@ -44,10 +44,23 @@ local mainHandler = Handler(Looper.getMainLooper())
 local vibrator = service.getSystemService(Context.VIBRATOR_SERVICE)
 
 -- ====================================================================
--- KONFIGURASI VERSI & GITHUB SILENT AUTO-UPDATE
+-- HELPER TAMPILAN DIALOG OVERLAY
+-- ====================================================================
+local function displayOverlayDialog(builder)
+  local dlg = builder.create()
+  local win = dlg.getWindow()
+  if win then
+    win.setType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
+  end
+  dlg.show()
+  return dlg
+end
+
+-- ====================================================================
+-- KONFIGURASI VERSI & GITHUB AUTO-UPDATE
 -- ====================================================================
 local APP_TITLE = "Deskripsi kamera Groq by Novan"
-local CURRENT_VERSION = "1.0.2"
+local CURRENT_VERSION = "1.0.3"
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/novanblind/DeskripsikameraGroq/main/KameraGroq.lua"
 
 local MODEL_NAME = "qwen/qwen3.8-27b"
@@ -86,7 +99,7 @@ local function getScriptFilePath()
 end
 
 -- ====================================================================
--- MEKANISME SILENT AUTO-UPDATE (TANPA NOTIFIKASI)
+-- MEKANISME AUTO-UPDATE DENGAN DIALOG NOTIFIKASI
 -- ====================================================================
 local function parseVersion(verStr)
   local parts = {}
@@ -125,17 +138,62 @@ local function saveNewScript(newCode, targetPath)
   return success
 end
 
-local function checkSilentUpdate()
+local function showDownloadSuccessDialog(newVer)
+  mainHandler.post(Runnable{
+    run = function()
+      service.speak("Download selesai. Pembaruan versi " .. newVer .. " berhasil disimpan.")
+      local b = AlertDialog.Builder(service)
+        .setTitle("Download Selesai")
+        .setMessage("Pembaruan ke versi " .. newVer .. " berhasil diunduh dan dipasang.\n\nSilakan muat ulang atau buka kembali plugin untuk menerapkan perubahan.")
+        .setPositiveButton("Oke", function(dlg, which)
+          if dlg then dlg.dismiss() end
+        end)
+      displayOverlayDialog(b)
+    end
+  })
+end
+
+local function showUpdateAvailableDialog(remoteVersion, newCode)
+  mainHandler.post(Runnable{
+    run = function()
+      service.speak("Versi baru tersedia: " .. remoteVersion .. ". Versi yang sedang digunakan: " .. CURRENT_VERSION)
+      local b = AlertDialog.Builder(service)
+        .setTitle("Versi Baru Tersedia")
+        .setMessage("Versi Baru: v" .. remoteVersion .. "\nVersi yang Sedang Digunakan: v" .. CURRENT_VERSION .. "\n\nApakah Anda ingin memperbarui sekarang?")
+        .setPositiveButton("Perbarui", function(dlg, which)
+          if dlg then dlg.dismiss() end
+          service.speak("Sedang mengunduh dan memasang pembaruan...")
+          Thread(Runnable{
+            run = function()
+              local localPath = getScriptFilePath()
+              if localPath and saveNewScript(newCode, localPath) then
+                showDownloadSuccessDialog(remoteVersion)
+              else
+                mainHandler.post(Runnable{
+                  run = function()
+                    service.speak("Gagal menyimpan berkas pembaruan.")
+                  end
+                })
+              end
+            end
+          }).start()
+        end)
+        .setNegativeButton("Nanti", function(dlg, which)
+          if dlg then dlg.dismiss() end
+        end)
+      displayOverlayDialog(b)
+    end
+  })
+end
+
+local function checkForUpdate()
   local fetchUrl = GITHUB_RAW_URL .. "?t=" .. tostring(os.time())
 
   local function processUpdateContent(content)
     if not content or #content < 200 then return end
     local remoteVersion = content:match('local%s+CURRENT_VERSION%s*=%s*["\']([^"\']+)["\']')
     if remoteVersion and isNewerVersion(remoteVersion, CURRENT_VERSION) then
-      local localPath = getScriptFilePath()
-      if localPath then
-        saveNewScript(content, localPath)
-      end
+      showUpdateAvailableDialog(remoteVersion, content)
     end
   end
 
@@ -247,16 +305,6 @@ local function triggerHaptic(ms)
       vibrator.vibrate(ms)
     end
   end)
-end
-
-local function displayOverlayDialog(builder)
-  local dlg = builder.create()
-  local win = dlg.getWindow()
-  if win then
-    win.setType(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY)
-  end
-  dlg.show()
-  return dlg
 end
 
 -- ====================================================================
@@ -1031,7 +1079,7 @@ launchCameraView()
 
 mainHandler.postDelayed(Runnable{
   run = function()
-    checkSilentUpdate()
+    checkForUpdate()
   end
 }, 1500)
 
