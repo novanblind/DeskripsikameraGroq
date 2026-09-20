@@ -60,7 +60,7 @@ end
 -- KONFIGURASI VERSI & GITHUB AUTO-UPDATE
 -- ====================================================================
 local APP_TITLE = "Deskripsi kamera Groq by Novan"
-local CURRENT_VERSION = "1.0.3"
+local CURRENT_VERSION = "1.0.4"
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/novanblind/DeskripsikameraGroq/main/KameraGroq.lua"
 
 local MODEL_NAME = "qwen/qwen3.8-27b"
@@ -99,7 +99,7 @@ local function getScriptFilePath()
 end
 
 -- ====================================================================
--- MEKANISME AUTO-UPDATE DENGAN DIALOG NOTIFIKASI
+-- MEKANISME UPDATE DENGAN DIALOG NOTIFIKASI
 -- ====================================================================
 local function parseVersion(verStr)
   local parts = {}
@@ -141,7 +141,7 @@ end
 local function showDownloadSuccessDialog(newVer)
   mainHandler.post(Runnable{
     run = function()
-      service.speak("Download selesai. Pembaruan versi " .. newVer .. " berhasil disimpan.")
+      service.speak("Download selesai. Pembaruan versi " .. newVer .. " berhasil dipasang.")
       local b = AlertDialog.Builder(service)
         .setTitle("Download Selesai")
         .setMessage("Pembaruan ke versi " .. newVer .. " berhasil diunduh dan dipasang.\n\nSilakan muat ulang atau buka kembali plugin untuk menerapkan perubahan.")
@@ -159,7 +159,7 @@ local function showUpdateAvailableDialog(remoteVersion, newCode)
       service.speak("Versi baru tersedia: " .. remoteVersion .. ". Versi yang sedang digunakan: " .. CURRENT_VERSION)
       local b = AlertDialog.Builder(service)
         .setTitle("Versi Baru Tersedia")
-        .setMessage("Versi Baru: v" .. remoteVersion .. "\nVersi yang Sedang Digunakan: v" .. CURRENT_VERSION .. "\n\nApakah Anda ingin memperbarui sekarang?")
+        .setMessage("Versi baru tersedia: v" .. remoteVersion .. "\nVersi yang digunakan: v" .. CURRENT_VERSION .. "\n\nApakah Anda ingin memperbarui sekarang?")
         .setPositiveButton("Perbarui", function(dlg, which)
           if dlg then dlg.dismiss() end
           service.speak("Sedang mengunduh dan memasang pembaruan...")
@@ -186,14 +186,47 @@ local function showUpdateAvailableDialog(remoteVersion, newCode)
   })
 end
 
-local function checkForUpdate()
+local function showNoUpdateDialog()
+  mainHandler.post(Runnable{
+    run = function()
+      service.speak("Tidak ada versi baru. Anda sudah menggunakan versi terbaru.")
+      local b = AlertDialog.Builder(service)
+        .setTitle("Tidak Ada Versi Baru")
+        .setMessage("Tidak ada versi baru.\nVersi yang digunakan: v" .. CURRENT_VERSION .. "\n\nAnda sudah menggunakan versi terbaru.")
+        .setPositiveButton("Oke", function(dlg, which)
+          if dlg then dlg.dismiss() end
+        end)
+      displayOverlayDialog(b)
+    end
+  })
+end
+
+local function checkForUpdate(isManual)
+  if isManual then
+    service.speak("Memeriksa versi baru...")
+  end
+
   local fetchUrl = GITHUB_RAW_URL .. "?t=" .. tostring(os.time())
 
   local function processUpdateContent(content)
-    if not content or #content < 200 then return end
+    if not content or #content < 200 then
+      if isManual then
+        mainHandler.post(Runnable{
+          run = function()
+            service.speak("Gagal memeriksa versi baru. Periksa koneksi internet Anda.")
+          end
+        })
+      end
+      return
+    end
+
     local remoteVersion = content:match('local%s+CURRENT_VERSION%s*=%s*["\']([^"\']+)["\']')
     if remoteVersion and isNewerVersion(remoteVersion, CURRENT_VERSION) then
       showUpdateAvailableDialog(remoteVersion, content)
+    else
+      if isManual then
+        showNoUpdateDialog()
+      end
     end
   end
 
@@ -203,6 +236,14 @@ local function checkForUpdate()
       httpEngine.get(fetchUrl, function(code, content)
         if code == 200 then
           processUpdateContent(content)
+        else
+          if isManual then
+            mainHandler.post(Runnable{
+              run = function()
+                service.speak("Gagal terhubung ke server pembaruan.")
+              end
+            })
+          end
         end
       end)
     end)
@@ -217,7 +258,8 @@ local function checkForUpdate()
           conn.setReadTimeout(10000)
           conn.setInstanceFollowRedirects(true)
 
-          if conn.getResponseCode() == 200 then
+          local resCode = conn.getResponseCode()
+          if resCode == 200 then
             local reader = BufferedReader(InputStreamReader(conn.getInputStream(), "UTF-8"))
             local lines = {}
             local line = reader.readLine()
@@ -227,6 +269,14 @@ local function checkForUpdate()
             end
             reader.close()
             processUpdateContent(table.concat(lines, "\n"))
+          else
+            if isManual then
+              mainHandler.post(Runnable{
+                run = function()
+                  service.speak("Gagal terhubung ke server pembaruan.")
+                end
+              })
+            end
           end
           conn.disconnect()
         end)
@@ -818,7 +868,8 @@ showSettingsMenu = function()
     "6. Edit Instruksi Mode Teks",
     "7. Edit Instruksi Mode Uang",
     "8. Edit Instruksi Deskripsi Foto",
-    "9. Reset Seluruh Pengaturan ke Bawaan"
+    "9. Periksa Versi Baru",
+    "10. Reset Seluruh Pengaturan ke Bawaan"
   }
 
   local b = AlertDialog.Builder(service)
@@ -847,6 +898,8 @@ showSettingsMenu = function()
       elseif which == 7 then
         showEditInstructionDialog("Instruksi Deskripsi Foto", DEFAULT_PHOTO_DESC_INSTRUCTION, photoDescInstruction, "instruction_desc")
       elseif which == 8 then
+        checkForUpdate(true)
+      elseif which == 9 then
         sp.edit().clear().apply()
         currentMode = "desc"
         cameraFacing = "environment"
@@ -1079,7 +1132,7 @@ launchCameraView()
 
 mainHandler.postDelayed(Runnable{
   run = function()
-    checkForUpdate()
+    checkForUpdate(false)
   end
 }, 1500)
 
