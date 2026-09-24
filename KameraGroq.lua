@@ -60,7 +60,7 @@ end
 -- KONFIGURASI VERSI & GITHUB AUTO-UPDATE
 -- ====================================================================
 local APP_TITLE = "Deskripsi kamera Groq by Novan"
-local CURRENT_VERSION = "1.0.4"
+local CURRENT_VERSION = "1.0.5"
 local GITHUB_RAW_URL = "https://raw.githubusercontent.com/novanblind/DeskripsikameraGroq/main/KameraGroq.lua"
 
 local MODEL_NAME = "qwen/qwen3.8-27b"
@@ -99,7 +99,7 @@ local function getScriptFilePath()
 end
 
 -- ====================================================================
--- MEKANISME UPDATE DENGAN DIALOG NOTIFIKASI
+-- MEKANISME UPDATE DENGAN DIALOG NOTIFIKASI (HANYA MANUAL DARI MENU)
 -- ====================================================================
 local function parseVersion(verStr)
   local parts = {}
@@ -1129,11 +1129,5 @@ end
 -- EKSEKUSI UTAMA
 -- ====================================================================
 launchCameraView()
-
-mainHandler.postDelayed(Runnable{
-  run = function()
-    checkForUpdate(false)
-  end
-}, 1500)
 
 return true
